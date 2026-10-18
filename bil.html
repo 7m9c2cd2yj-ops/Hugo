@@ -1,0 +1,515 @@
+<title>Alvin, Hugo &amp; Elton</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Baloo+2:wght@800&display=swap">
+<style>
+  /* Layout: fullscreen 3D-scen, flytande kontrollpanel nertill, rubrik uppe till vänster */
+  :root {
+    --pink-deep: #c2186b;
+    --pink-hot: #ff4fa3;
+    --pink-soft: #ffc2df;
+    --cream: #fff4fa;
+    --ink: #4a0c2c;
+    --glass: rgba(255, 244, 250, 0.72);
+    --display: "Baloo 2", "Fredoka", system-ui, sans-serif;
+    --body: "Fredoka", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--pink-soft);
+    color: var(--ink);
+    font-family: var(--body);
+    overflow: hidden;
+  }
+  #scene {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: grab;
+  }
+  #scene:active { cursor: grabbing; }
+  header {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 18px);
+    left: max(16px, env(safe-area-inset-left, 0px));
+    right: max(16px, env(safe-area-inset-right, 0px));
+    pointer-events: none;
+  }
+  h1 {
+    margin: 0;
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(1.8rem, 6vw, 3.2rem);
+    line-height: 1;
+    color: var(--cream);
+    text-shadow: 0 3px 0 var(--pink-deep), 0 8px 24px rgba(194, 24, 107, 0.35);
+    text-wrap: balance;
+  }
+  header p {
+    margin: 8px 0 0;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--ink);
+    opacity: 0.75;
+  }
+  .panel {
+    position: fixed;
+    left: 50%;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    transform: translateX(-50%);
+    width: min(560px, calc(100% - 32px));
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 10px 14px;
+    padding: 12px 14px;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 22px;
+    box-shadow: 0 10px 30px rgba(194, 24, 107, 0.25);
+  }
+  .group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    opacity: 0.6;
+  }
+  button {
+    font: 700 0.95rem var(--body);
+    color: var(--ink);
+    background: var(--cream);
+    border: 2px solid var(--pink-hot);
+    border-radius: 999px;
+    padding: 7px 14px;
+    cursor: pointer;
+    transition: transform 0.15s, background 0.15s, color 0.15s;
+  }
+  button:hover { transform: translateY(-2px); }
+  button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  button[aria-pressed="true"] { background: var(--pink-hot); color: var(--cream); }
+  .swatch {
+    width: 30px; height: 30px; padding: 0;
+    border: 3px solid var(--cream);
+    box-shadow: 0 0 0 2px var(--pink-hot);
+  }
+  .swatch[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--ink); }
+</style>
+
+<canvas id="scene" aria-label="3D-bil med namnen Alvin, Hugo och Elton. Dra för att snurra."></canvas>
+
+<header>
+  <h1>Alvin, Hugo &amp; Elton</h1>
+  <p>Dra för att snurra bilen · scrolla eller nyp för att zooma</p>
+</header>
+
+<div class="panel">
+  <div class="group" role="group" aria-label="Visa namn">
+    <span class="label">Visa</span>
+    <button id="btn-alvin" data-view="alvin">Alvin</button>
+    <button id="btn-hugo" data-view="hugo">Hugo</button>
+    <button id="btn-elton" data-view="elton">Elton</button>
+  </div>
+  <div class="group" role="group" aria-label="Bilens färg">
+    <span class="label">Färg</span>
+    <button id="c-white" class="swatch" style="background:#fbf7fa" data-color="#fbf7fa" aria-label="Pärlvit" aria-pressed="true"></button>
+    <button id="c-teal" class="swatch" style="background:#19c3c0" data-color="#19c3c0" aria-label="Turkos" aria-pressed="false"></button>
+    <button id="c-purple" class="swatch" style="background:#7b3fe4" data-color="#7b3fe4" aria-label="Lila" aria-pressed="false"></button>
+    <button id="c-yellow" class="swatch" style="background:#ffc93c" data-color="#ffc93c" aria-label="Gul" aria-pressed="false"></button>
+  </div>
+  <button id="btn-spin" aria-pressed="true">Snurrar</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(async function () {
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  try { await document.fonts.load('800 120px "Baloo 2"'); } catch (e) {}
+
+  const canvas = document.getElementById("scene");
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0xff8cc4, 22, 55);
+
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
+  camera.position.set(6.5, 3.6, 7.5);
+
+  const controls = new THREE.OrbitControls(camera, canvas);
+  controls.target.set(0, 0.9, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.enablePan = false;
+  controls.minDistance = 4.5;
+  controls.maxDistance = 18;
+  controls.maxPolarAngle = Math.PI * 0.49;
+  controls.autoRotate = !reduceMotion;
+  controls.autoRotateSpeed = 1.6;
+
+  // ---- Rosa himmel (gradient-sfär) ----
+  const skyGeo = new THREE.SphereGeometry(80, 32, 16);
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    uniforms: {
+      top: { value: new THREE.Color(0xffe3f1) },
+      mid: { value: new THREE.Color(0xff9fd0) },
+      bottom: { value: new THREE.Color(0xe0377f) }
+    },
+    vertexShader: "varying vec3 vPos; void main(){ vPos = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
+    fragmentShader: "uniform vec3 top; uniform vec3 mid; uniform vec3 bottom; varying vec3 vPos; void main(){ float h = vPos.y; vec3 c = h > 0.0 ? mix(mid, top, smoothstep(0.0, 0.6, h)) : mix(mid, bottom, smoothstep(0.0, 0.5, -h)); gl_FragColor = vec4(c, 1.0); }"
+  });
+  scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+  // ---- Ljus ----
+  scene.add(new THREE.HemisphereLight(0xfff0f7, 0xff5fa8, 0.75));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.25);
+  sun.position.set(6, 10, 5);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -6, right: 6, top: 6, bottom: -6, near: 1, far: 30 });
+  sun.shadow.bias = -0.0005;
+  scene.add(sun);
+  const rim = new THREE.DirectionalLight(0xff8fc7, 0.6);
+  rim.position.set(-6, 4, -6);
+  scene.add(rim);
+
+  // ---- Mark och snurrplatta ----
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(60, 64),
+    new THREE.MeshStandardMaterial({ color: 0xff5fa8, roughness: 0.9 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  const turntable = new THREE.Group();
+  scene.add(turntable);
+  const plate = new THREE.Mesh(
+    new THREE.CylinderGeometry(3.6, 3.75, 0.22, 64),
+    new THREE.MeshStandardMaterial({ color: 0xffb3d6, roughness: 0.35, metalness: 0.1 })
+  );
+  plate.position.y = 0.11;
+  plate.receiveShadow = true;
+  plate.castShadow = true;
+  turntable.add(plate);
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(3.68, 0.06, 12, 96),
+    new THREE.MeshStandardMaterial({ color: 0xff4fa3, emissive: 0xff4fa3, emissiveIntensity: 0.4 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.22;
+  turntable.add(ring);
+
+  // ---- Bilen ----
+  const car = new THREE.Group();
+  car.position.y = 0.22;
+  turntable.add(car);
+
+  const paint = new THREE.MeshPhysicalMaterial({
+    color: 0xfbf7fa, metalness: 0.3, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.08
+  });
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0x2a1030, metalness: 0.2, roughness: 0.05, clearcoat: 1, transparent: true, opacity: 0.88
+  });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xe8e8ee, metalness: 1, roughness: 0.2 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x241820, roughness: 0.85 });
+  const pinkTrim = new THREE.MeshStandardMaterial({ color: 0xff4fa3, roughness: 0.4 });
+
+  function extrude(shape, depth, bevel) {
+    const g = new THREE.ExtrudeGeometry(shape, {
+      depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 5, curveSegments: 24
+    });
+    g.translate(0, 0, -depth / 2);
+    return g;
+  }
+
+  // Kaross (sidoprofil)
+  const bodyShape = new THREE.Shape();
+  bodyShape.moveTo(-2.2, 0.38);
+  bodyShape.lineTo(2.15, 0.38);
+  bodyShape.quadraticCurveTo(2.35, 0.4, 2.32, 0.75);
+  bodyShape.quadraticCurveTo(2.28, 1.12, 1.85, 1.15);
+  bodyShape.lineTo(-1.9, 1.2);
+  bodyShape.quadraticCurveTo(-2.28, 1.18, -2.28, 0.85);
+  bodyShape.lineTo(-2.25, 0.5);
+  bodyShape.quadraticCurveTo(-2.25, 0.38, -2.2, 0.38);
+  const body = new THREE.Mesh(extrude(bodyShape, 2.0, 0.12), paint);
+  body.castShadow = true;
+  car.add(body);
+
+  // Hytt i glas
+  const cabShape = new THREE.Shape();
+  cabShape.moveTo(-1.45, 1.18);
+  cabShape.lineTo(1.0, 1.15);
+  cabShape.quadraticCurveTo(0.6, 1.75, 0.35, 1.88);
+  cabShape.lineTo(-1.05, 1.9);
+  cabShape.quadraticCurveTo(-1.3, 1.85, -1.45, 1.18);
+  const cabin = new THREE.Mesh(extrude(cabShape, 1.7, 0.07), glass);
+  cabin.castShadow = true;
+  car.add(cabin);
+
+  // Tak
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 1.86), paint);
+  roof.position.set(-0.35, 1.97, 0);
+  roof.castShadow = true;
+  car.add(roof);
+
+  // Rosa racingrand över tak och huv
+  const stripe1 = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.012, 0.32), pinkTrim);
+  stripe1.position.set(-0.35, 2.017, 0);
+  car.add(stripe1);
+
+  // Hjul
+  const wheels = [];
+  function makeWheel(x, z) {
+    const w = new THREE.Group();
+    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.13, 16, 40), rubber);
+    tire.castShadow = true;
+    const rimMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.2, 28), chrome);
+    rimMesh.rotation.x = Math.PI / 2;
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.24, 16), pinkTrim);
+    hub.rotation.x = Math.PI / 2;
+    w.add(tire, rimMesh, hub);
+    for (let i = 0; i < 5; i++) {
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 0.06), chrome);
+      spoke.rotation.z = (i / 5) * Math.PI * 2;
+      spoke.position.z = z > 0 ? 0.09 : -0.09;
+      w.add(spoke);
+    }
+    w.position.set(x, 0.46, z);
+    car.add(w);
+    wheels.push(w);
+  }
+  makeWheel(1.4, 1.0); makeWheel(1.4, -1.0); makeWheel(-1.4, 1.0); makeWheel(-1.4, -1.0);
+
+  // Lampor
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xfffbe8, emissive: 0xfff2b0, emissiveIntensity: 1.2 });
+  const tailMat = new THREE.MeshStandardMaterial({ color: 0xff2a6d, emissive: 0xff1f5e, emissiveIntensity: 1.0 });
+  [0.72, -0.72].forEach(z => {
+    const hl = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 14), headMat);
+    hl.scale.set(0.5, 1, 1.4);
+    hl.position.set(2.38, 0.85, z);
+    car.add(hl);
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 0.42), tailMat);
+    tl.position.set(-2.4, 0.92, z);
+    car.add(tl);
+  });
+
+  // Stötfångare
+  [[2.38, 0.46], [-2.36, 0.46]].forEach(([x, y]) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 2.1), chrome);
+    b.position.set(x, y, 0);
+    car.add(b);
+  });
+
+  // ---- Namnskyltar ----
+  function nameTexture(text, opts = {}) {
+    const c = document.createElement("canvas");
+    c.width = opts.w || 1024; c.height = opts.h || 256;
+    const ctx = c.getContext("2d");
+    const size = opts.size || 170;
+    ctx.font = `800 ${size}px "Baloo 2", "Fredoka", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const y = c.height / 2 + size * 0.08;
+    ctx.lineJoin = "round";
+    ctx.lineWidth = size * 0.16;
+    ctx.strokeStyle = "#ffffff";
+    ctx.strokeText(text, c.width / 2, y);
+    const grad = ctx.createLinearGradient(0, c.height * 0.2, 0, c.height * 0.8);
+    grad.addColorStop(0, "#ff6fb5");
+    grad.addColorStop(1, "#c2186b");
+    ctx.fillStyle = grad;
+    ctx.fillText(text, c.width / 2, y);
+    const tex = new THREE.CanvasTexture(c);
+    tex.encoding = THREE.sRGBEncoding;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+  }
+  function namePlane(text, w, h, opts) {
+    const mat = new THREE.MeshStandardMaterial({
+      map: nameTexture(text, opts), transparent: true, roughness: 0.3,
+      polygonOffset: true, polygonOffsetFactor: -2
+    });
+    return new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+  }
+
+  // Vänster sida: ALVIN
+  const alvin = namePlane("ALVIN", 2.0, 0.5);
+  alvin.position.set(0, 0.82, 1.125);
+  car.add(alvin);
+
+  // Höger sida: HUGO
+  const hugo = namePlane("HUGO", 2.0, 0.5);
+  hugo.rotation.y = Math.PI;
+  hugo.position.set(0, 0.82, -1.125);
+  car.add(hugo);
+
+  // Motorhuven: ELTON (läses framifrån)
+  const eltonGeo = new THREE.PlaneGeometry(1.9, 0.55);
+  eltonGeo.rotateZ(Math.PI / 2);
+  eltonGeo.rotateX(-Math.PI / 2);
+  const elton = new THREE.Mesh(eltonGeo, new THREE.MeshStandardMaterial({
+    map: nameTexture("ELTON"), transparent: true, roughness: 0.3, polygonOffset: true, polygonOffsetFactor: -2
+  }));
+  elton.position.set(1.55, 1.3, 0);
+  elton.rotation.z = -0.07;
+  car.add(elton);
+
+  // Bakre registreringsskylt med alla tre
+  const plateTexC = document.createElement("canvas");
+  plateTexC.width = 1024; plateTexC.height = 256;
+  {
+    const ctx = plateTexC.getContext("2d");
+    ctx.fillStyle = "#fff4fa";
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(8, 8, 1008, 240, 40) : ctx.rect(8, 8, 1008, 240);
+    ctx.fill();
+    ctx.lineWidth = 14; ctx.strokeStyle = "#c2186b"; ctx.stroke();
+    ctx.fillStyle = "#c2186b";
+    ctx.font = '800 92px "Baloo 2", "Fredoka", sans-serif';
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("ALVIN · HUGO · ELTON", 512, 140);
+  }
+  const plateTex = new THREE.CanvasTexture(plateTexC);
+  plateTex.encoding = THREE.sRGBEncoding;
+  const plateGeo = new THREE.PlaneGeometry(1.3, 0.325);
+  plateGeo.rotateY(-Math.PI / 2);
+  const rearPlate = new THREE.Mesh(plateGeo, new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.4 }));
+  rearPlate.position.set(-2.405, 0.68, 0);
+  car.add(rearPlate);
+  const frontPlateGeo = new THREE.PlaneGeometry(1.3, 0.325);
+  frontPlateGeo.rotateY(Math.PI / 2);
+  const frontPlate = new THREE.Mesh(frontPlateGeo, new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.4 }));
+  frontPlate.position.set(2.46, 0.62, 0);
+  car.add(frontPlate);
+
+  // ---- Svävande rosa former i bakgrunden ----
+  const floaters = [];
+  const shapeMats = [0xff4fa3, 0xffffff, 0xff8cc2, 0xd63384, 0xffc2df].map(c =>
+    new THREE.MeshStandardMaterial({ color: c, roughness: 0.35, metalness: 0.1 })
+  );
+  const heart = new THREE.Shape();
+  heart.moveTo(0, -0.6);
+  heart.bezierCurveTo(-0.1, -0.45, -0.75, -0.1, -0.75, 0.25);
+  heart.bezierCurveTo(-0.75, 0.6, -0.3, 0.75, 0, 0.45);
+  heart.bezierCurveTo(0.3, 0.75, 0.75, 0.6, 0.75, 0.25);
+  heart.bezierCurveTo(0.75, -0.1, 0.1, -0.45, 0, -0.6);
+  const geos = [
+    new THREE.SphereGeometry(0.6, 32, 20),
+    new THREE.TorusGeometry(0.55, 0.2, 16, 48),
+    new THREE.IcosahedronGeometry(0.6, 0),
+    new THREE.ExtrudeGeometry(heart, { depth: 0.3, bevelEnabled: true, bevelThickness: 0.12, bevelSize: 0.1, bevelSegments: 4, curveSegments: 24 })
+  ];
+  geos[3].center();
+  for (let i = 0; i < 26; i++) {
+    const m = new THREE.Mesh(geos[i % geos.length], shapeMats[i % shapeMats.length]);
+    const a = (i / 26) * Math.PI * 2 + Math.random() * 0.3;
+    const r = 9 + Math.random() * 14;
+    m.position.set(Math.cos(a) * r, 1.5 + Math.random() * 9, Math.sin(a) * r);
+    const s = 0.6 + Math.random() * 1.4;
+    m.scale.setScalar(s);
+    m.rotation.set(Math.random() * 6, Math.random() * 6, 0);
+    m.userData = { baseY: m.position.y, phase: Math.random() * 6, spin: 0.2 + Math.random() * 0.5 };
+    scene.add(m);
+    floaters.push(m);
+  }
+
+  // ---- Kontroller ----
+  const views = {
+    alvin: new THREE.Vector3(0.6, 1.6, 7.5),
+    hugo: new THREE.Vector3(-0.6, 1.6, -7.5),
+    elton: new THREE.Vector3(6.2, 4.6, 0.01)
+  };
+  let flyTo = null;
+  const spinBtn = document.getElementById("btn-spin");
+  function setSpin(on) {
+    controls.autoRotate = on;
+    spinBtn.setAttribute("aria-pressed", String(on));
+    spinBtn.textContent = on ? "Snurrar" : "Snurra";
+  }
+  setSpin(controls.autoRotate);
+  spinBtn.addEventListener("click", () => setSpin(!controls.autoRotate));
+
+  document.querySelectorAll("[data-view]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      setSpin(false);
+      turntable.rotation.y = 0;
+      flyTo = { from: camera.position.clone(), to: views[btn.dataset.view].clone(), t: 0 };
+    });
+  });
+  controls.addEventListener("start", () => { flyTo = null; });
+
+  document.querySelectorAll("[data-color]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      paint.color.set(btn.dataset.color);
+      roof.material = paint;
+      document.querySelectorAll("[data-color]").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+    });
+  });
+
+  // ---- Storlek och loop ----
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.fov = w < 600 ? 52 : 40;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  const clock = new THREE.Clock();
+  function tick() {
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t = clock.elapsedTime;
+
+    if (flyTo) {
+      flyTo.t = Math.min(flyTo.t + dt / 1.1, 1);
+      const k = 1 - Math.pow(1 - flyTo.t, 3);
+      // Flyg via en båge runt bilen i stället för rakt igenom den
+      const target = controls.target;
+      const a = flyTo.from.clone().sub(target), b = flyTo.to.clone().sub(target);
+      const sa = new THREE.Spherical().setFromVector3(a), sb = new THREE.Spherical().setFromVector3(b);
+      let dTheta = sb.theta - sa.theta;
+      if (dTheta > Math.PI) dTheta -= Math.PI * 2;
+      if (dTheta < -Math.PI) dTheta += Math.PI * 2;
+      const s = new THREE.Spherical(
+        sa.radius + (sb.radius - sa.radius) * k,
+        sa.phi + (sb.phi - sa.phi) * k,
+        sa.theta + dTheta * k
+      );
+      camera.position.copy(new THREE.Vector3().setFromSpherical(s).add(target));
+      if (flyTo.t >= 1) flyTo = null;
+    }
+
+    if (!reduceMotion) {
+      floaters.forEach(m => {
+        m.position.y = m.userData.baseY + Math.sin(t * 0.8 + m.userData.phase) * 0.5;
+        m.rotation.y += dt * m.userData.spin;
+        m.rotation.x += dt * m.userData.spin * 0.4;
+      });
+      car.position.y = 0.22 + Math.sin(t * 2.2) * 0.012;
+    }
+
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+  tick();
+})();
+</script>
